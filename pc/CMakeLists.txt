@@ -502,10 +502,18 @@ if(MINGW)
     target_link_options(ac_pc PRIVATE -static-libgcc -static-libstdc++ -Wl,-Bstatic,--whole-archive "${WINPTHREAD_STRIPPED}" -Wl,-Bdynamic,--no-whole-archive)
 endif()
 
-# Hide console window on Windows (GUI subsystem)
-# Use -DPC_CONSOLE=ON to keep the console visible for debugging
-if(WIN32 AND NOT PC_CONSOLE)
-    target_link_options(ac_pc PRIVATE -mwindows)
+# Windows subsystem selection
+# - Default (PC_CONSOLE=OFF): GUI subsystem (-mwindows), no console output.
+# - PC_CONSOLE=ON: link as console subsystem (-mconsole) so the verbose
+#   output (e.g. --verbose) is visible when running from a cmd window.
+if(WIN32)
+    if(PC_CONSOLE)
+        set_target_properties(ac_pc PROPERTIES WIN32_EXECUTABLE FALSE)
+        target_link_options(ac_pc PRIVATE -mconsole)
+    else()
+        set_target_properties(ac_pc PROPERTIES WIN32_EXECUTABLE TRUE)
+        target_link_options(ac_pc PRIVATE -mwindows)
+    endif()
 endif()
 
 # =============================================================================

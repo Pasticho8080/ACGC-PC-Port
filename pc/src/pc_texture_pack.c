@@ -704,6 +704,13 @@ static void neg_cache_insert(xxh_u64 key) {
 /* --- Public API --- */
 
 static void check_compressed_texture_support(void) {
+#ifdef PORT_GLES
+    /* GLES: force the RGBA8 path. BC7 packs are decoded in software (that path
+        already exists via !g_has_bc7) and DXT packs are skipped (bail-out via
+        !g_has_s3tc) — glCompressed* is not reliable on ES. */
+    g_has_bc7 = 0;
+    g_has_s3tc = 0;
+#else
     GLint num_ext = 0;
     glGetIntegerv(GL_NUM_EXTENSIONS, &num_ext);
     for (GLint i = 0; i < num_ext; i++) {
@@ -712,6 +719,7 @@ static void check_compressed_texture_support(void) {
         if (strcmp(ext, "GL_ARB_texture_compression_bptc") == 0) g_has_bc7 = 1;
         if (strcmp(ext, "GL_EXT_texture_compression_s3tc") == 0) g_has_s3tc = 1;
     }
+#endif
 }
 
 static void xxhash64_selftest(void) {

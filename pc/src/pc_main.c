@@ -127,8 +127,13 @@ void pc_platform_init(void) {
     }
 
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+#ifdef PORT_GLES
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+#else
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+#endif
 #ifdef __APPLE__
     /* macOS requires forward-compatible flag for Core Profile contexts */
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
@@ -171,9 +176,13 @@ void pc_platform_init(void) {
         SDL_Quit();
         exit(1);
     }
-
+#ifdef PORT_GLES
+    if (!gladLoadGLES2((GLADloadfunc)SDL_GL_GetProcAddress)) {
+        fprintf(stderr, "gladLoadGLES2 failed\n");
+#else
     if (!gladLoadGL((GLADloadfunc)SDL_GL_GetProcAddress)) {
         fprintf(stderr, "gladLoadGL failed\n");
+#endif
         SDL_GL_DeleteContext(g_pc_gl_context);
         SDL_DestroyWindow(g_pc_window);
         SDL_Quit();
@@ -214,10 +223,12 @@ void pc_platform_init(void) {
 
     pc_platform_update_window_size();
 
-#ifdef PC_ENHANCEMENTS
+#ifdef PC_ENHANCEMENTS 
+#ifndef PORT_GLES
     if (g_pc_settings.msaa > 0) {
         glEnable(GL_MULTISAMPLE);
     }
+#endif
 #endif
 
     pc_gx_init();

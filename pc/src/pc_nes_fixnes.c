@@ -115,13 +115,23 @@ static GLuint fixnes_compile_shader(GLenum type, const char *src) {
 
 static void fixnes_init_gl(void) {
     const char *vs =
+    #ifndef PORT_GLES
         "#version 330 core\n"
+    #else
+        "#version 300 es\n"
+        "precision highp float;\n"
+    #endif
         "layout(location=0) in vec2 pos;\n"
         "layout(location=1) in vec2 uv;\n"
         "out vec2 v_uv;\n"
         "void main() { gl_Position = vec4(pos, 0, 1); v_uv = uv; }\n";
     const char *fs =
+    #ifndef PORT_GLES
         "#version 330 core\n"
+    #else
+        "#version 300 es\n"
+        "precision highp float;\n"
+    #endif
         "in vec2 v_uv;\n"
         "out vec4 fragColor;\n"
         "uniform sampler2D tex;\n"
@@ -394,9 +404,20 @@ void pc_fixnes_render_frame(uint16_t *fb) {
      * Skip top 8 rows (often garbage), show 224 lines. */
     glBindTexture(GL_TEXTURE_2D, fixnes_texture);
     if (g_pc_profile_enabled) pc_profiler_add_count_texture_bind_slow();
+#ifdef PORT_GLES
+    /* GLES lacks GL_UNSIGNED_SHORT_5_6_5_REV: byte-swap each 565 pixel
+   (R in low bits -> R in high bits) and upload as 565. */
+    static uint16_t fixnes_565_scratch[256 * 224];
+    const uint16_t* src = fb + 256 * 8;
+    for (int i = 0; i < 256 * 224; i++) {
+        fixnes_565_scratch[i] = (uint16_t)((src[i] >> 8) | (src[i] << 8));
+    }
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 256, 224, 0,
+                 GL_RGB, GL_UNSIGNED_SHORT_5_6_5, fixnes_565_scratch);
+#else
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 256, 224, 0,
                  GL_RGB, GL_UNSIGNED_SHORT_5_6_5_REV, fb + 256 * 8);
-
+#endif
     /* 0 = stretch to window, 1 = centered 4:3 with pillar/letterbox. */
     int win_w = g_pc_window_w;
     int win_h = g_pc_window_h;

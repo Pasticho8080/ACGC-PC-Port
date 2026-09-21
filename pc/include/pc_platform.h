@@ -6,7 +6,12 @@
 
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
+
+#ifdef PORT_GLES
+#include <glad/gles2.h>
+#else
 #include <glad/gl.h>
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>

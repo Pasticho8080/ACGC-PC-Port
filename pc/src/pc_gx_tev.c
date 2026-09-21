@@ -34,6 +34,24 @@ static char* load_shader(const char* filename) {
     char* src = load_text_file(path);
     if (src) {
         printf("[PC/TEV] Loaded shader: %s\n", path);
+#ifdef PORT_GLES
+        /* The file ships with "#version 330 core"; on GLES replace the first line
+            with 300 es + default precision (required in fragment shaders). */
+        const char* es_hdr = "#version 300 es\nprecision highp float;\n";
+        char* body = src;
+        if (strncmp(body, "#version", 8) == 0) {
+            char* nl = strchr(body, '\n');
+            body = nl ? nl + 1 : body + strlen(body);
+        }
+        size_t blen = strlen(body);
+        char* out = (char*)malloc(strlen(es_hdr) + blen + 1);
+        if (!out) { free(src); return NULL; }
+        strcpy(out, es_hdr);
+        memcpy(out + strlen(es_hdr), body, blen);
+        out[strlen(es_hdr) + blen] = '\0';
+        free(src);
+        src = out;
+#endif
     } else {
         fprintf(stderr, "FATAL: Could not load shader: %s\n", path);
     }
@@ -362,7 +380,11 @@ static char* build_specialized_source(const PCGXShaderKey* k) {
     if (!out) return NULL;
 
     size_t pos = 0;
+#ifdef PORT_GLES
+    memcpy(out + pos, "#version 300 es\nprecision highp float;\n", 39); pos += 39;
+#else
     memcpy(out + pos, "#version 330 core\n", 18); pos += 18;
+#endif
     memcpy(out + pos, consts, (size_t)clen); pos += (size_t)clen;
 
     const char* p = s_frag_base;
@@ -371,6 +393,9 @@ static char* build_specialized_source(const PCGXShaderKey* k) {
         const char* line_end = nl ? nl : p + strlen(p);
         int skip = (strncmp(p, "#version", 8) == 0) ||
                    line_declares_folded_uniform(p, line_end);
+#ifdef PORT_GLES
+        skip = skip || (strncmp(p, "precision", 9) == 0);
+#endif
         if (!skip) {
             size_t len = (size_t)(line_end - p);
             memcpy(out + pos, p, len);

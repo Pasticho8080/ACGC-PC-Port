@@ -398,7 +398,11 @@ void pc_gx_begin_frame(void) {
     glViewport(0, 0, g_pc_window_w, g_pc_window_h);
     pc_gx_viewport_state_invalidate();
 #endif
+#ifdef PORT_GLES
+    glClearDepthf(g_gx.clear_depth);
+#else
     glClearDepth(g_gx.clear_depth);
+#endif
     glClearColor(g_gx.clear_color[0], g_gx.clear_color[1], g_gx.clear_color[2], g_gx.clear_color[3]);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     pc_profiler_add_time(PC_PROF_TIMER_GX_BEGIN, prof_start);
@@ -1358,7 +1362,13 @@ void GXSetViewport(f32 left, f32 top, f32 wd, f32 ht, f32 nearz, f32 farz) {
 
     pc_gx_draw_pending(); /* glViewport is not dirty-tracked */
     glViewport(gl_x, gl_y, gl_w, gl_h);
+
+#ifdef PORT_GLES
+    glDepthRangef(nearz, farz);
+#else
     glDepthRange((double)nearz, (double)farz);
+#endif
+
     s_gl_viewport.valid = 1;
     s_gl_viewport.x = gl_x;
     s_gl_viewport.y = gl_y;
@@ -1982,7 +1992,16 @@ void GXSetTexCoordGen2(u32 dst, u32 func, u32 src, u32 mtx, GXBool normalize, u3
     }
 }
 void GXSetLineWidth(u8 width, u32 texOffsets) { glLineWidth(width / 16.0f); }
-void GXSetPointSize(u8 size, u32 texOffsets) { glPointSize(size / 16.0f); }
+void GXSetPointSize(u8 size, u32 texOffsets) { 
+    #ifndef PORT_GLES
+    glPointSize(size / 16.0f);
+#else
+    /* GLES has no glPointSize (point size is fixed at 1px unless the vertex
+       shader writes gl_PointSize with GL_PROGRAM_POINT_SIZE enabled). */
+    (void)size;
+    (void)texOffsets;
+#endif
+}
 void GXEnableTexOffsets(u32 coord, GXBool line, GXBool point) {
     (void)coord; (void)line; (void)point;
 }

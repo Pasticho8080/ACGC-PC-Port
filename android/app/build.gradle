@@ -7,9 +7,8 @@ else {
     apply plugin: 'com.android.library'
 }
 
-/* Per-ABI builds: `-PpcAbi=armeabi-v7a` builds only that ABI (used by CI).
- * Without the property, both ARM ABIs are built into one APK. */
-def pcTargetAbis = project.hasProperty('pcAbi') ? [project.property('pcAbi')] : ['arm64-v8a', 'armeabi-v7a']
+/* One APK for all supported ABIs (both ARM variants). */
+def pcTargetAbis = ['arm64-v8a', 'armeabi-v7a']
 
 android {
     if (buildAsApplication) {
@@ -41,14 +40,6 @@ android {
         debug {
             debuggable true
             jniDebuggable true
-        }
-    }
-    splits {
-        abi {
-            enable true
-            reset()
-            include 'arm64-v8a', 'armeabi-v7a'
-            universalApk false
         }
     }
     applicationVariants.all { variant ->

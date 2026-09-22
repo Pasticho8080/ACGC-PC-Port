@@ -86,25 +86,16 @@ jobs:
           path: pc/build32/bin/
 
   android:
-    name: Android-${{ matrix.abi }}
+    name: Android
     runs-on: ubuntu-latest
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
-    strategy:
-      fail-fast: false
-      matrix:
-        abi: [arm64-v8a, armeabi-v7a]
 
     steps:
       - uses: actions/checkout@v6
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
@@ -117,12 +108,12 @@ jobs:
           sdkmanager --install "platforms;android-34" "build-tools;34.0.0"
           sdkmanager --install "ndk;30.0.16248370"
 
-      - name: Build APK (${{ matrix.abi }})
+      - name: Build APK
         working-directory: android
         run: |
-          ./gradlew :app:assembleDebug -PpcAbi=${{ matrix.abi }} --no-daemon
+          ./gradlew :app:assembleDebug --no-daemon
 
       - uses: actions/upload-artifact@v7
         with:
-          name: AnimalCrossing-Android-${{ matrix.abi }}
+          name: AnimalCrossing-Android
           path: android/app/build/outputs/apk/debug/

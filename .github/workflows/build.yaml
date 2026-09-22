@@ -16,8 +16,6 @@ jobs:
           - { name: "Windows-i686",   os: windows-latest, msys2_sys: MINGW32, msys2_env: mingw-w64-i686   }
           - { name: "Linux-x86_64",   os: ubuntu-latest,  linux_arch: x86_64 }
           - { name: "Linux-i686",     os: ubuntu-latest,  linux_arch: i686   }
-          - { name: "macOS-ARM64",    os: macos-latest  }
-          - { name: "macOS-x86_64",   os: macos-latest, macos_arch: x86_64 }
 
     steps:
       - uses: actions/checkout@v6
@@ -74,45 +72,9 @@ jobs:
           cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/Toolchain-linux32.cmake
           make -j$(nproc)
 
-      # ── macOS ARM64 ───────────────────────────────────────────────────
-      - name: Install deps (macOS ARM64)
-        if: runner.os == 'macOS' && matrix.macos_arch != 'x86_64'
-        run: |
-          brew install gcc sdl2 cmake
-          GCC_VERSION=$(ls "$(brew --prefix)/bin/gcc-"* | grep -Eo '[0-9]+$' | sort -rn | head -1)
-          echo "GCC_VERSION=$GCC_VERSION" >> $GITHUB_ENV
-
-      - name: Build (macOS ARM64)
-        if: runner.os == 'macOS' && matrix.macos_arch != 'x86_64'
-        run: |
-          cd pc && mkdir -p build && cd build
-          cmake .. \
-            -DCMAKE_C_COMPILER=gcc-${GCC_VERSION} \
-            -DCMAKE_CXX_COMPILER=g++-${GCC_VERSION}
-          make -j$(sysctl -n hw.ncpu)
-
-      # ── macOS x86_64 (via Rosetta 2 + x86_64 Homebrew) ───────────────
-      - name: Install deps (macOS x86_64)
-        if: runner.os == 'macOS' && matrix.macos_arch == 'x86_64'
-        run: |
-          curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh -o /tmp/brew_install.sh
-          arch -x86_64 /bin/bash /tmp/brew_install.sh
-          arch -x86_64 /usr/local/bin/brew install gcc sdl2 cmake
-          GCC_VERSION=$(ls /usr/local/bin/gcc-* | grep -Eo '[0-9]+$' | sort -rn | head -1)
-          echo "GCC_VERSION=$GCC_VERSION" >> $GITHUB_ENV
-
-      - name: Build (macOS x86_64)
-        if: runner.os == 'macOS' && matrix.macos_arch == 'x86_64'
-        run: |
-          cd pc && mkdir -p build && cd build
-          arch -x86_64 /usr/local/bin/cmake .. \
-            -DCMAKE_C_COMPILER=/usr/local/bin/gcc-${GCC_VERSION} \
-            -DCMAKE_CXX_COMPILER=/usr/local/bin/g++-${GCC_VERSION}
-          arch -x86_64 make -j$(sysctl -n hw.ncpu)
-
       # ── Artifacts ─────────────────────────────────────────────────────
       - uses: actions/upload-artifact@v7
-        if: runner.os == 'Windows' || (runner.os == 'Linux' && matrix.linux_arch == 'x86_64') || runner.os == 'macOS'
+        if: runner.os == 'Windows' || (runner.os == 'Linux' && matrix.linux_arch == 'x86_64')
         with:
           name: AnimalCrossing-${{ matrix.name }}
           path: pc/build/bin/
@@ -122,3 +84,37 @@ jobs:
         with:
           name: AnimalCrossing-${{ matrix.name }}
           path: pc/build32/bin/
+
+  android:
+    name: Android-${{ matrix.abi }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        abi: [arm64-v8a, armeabi-v7a]
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK components
+        run: |
+          sdkmanager --install "platforms;android-34" "build-tools;34.0.0"
+          sdkmanager --install "ndk;30.0.16248370"
+
+      - name: Build APK (${{ matrix.abi }})
+        working-directory: android
+        run: |
+          ./gradlew :app:assembleDebug -PpcAbi=${{ matrix.abi }} --no-daemon
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: AnimalCrossing-Android-${{ matrix.abi }}
+          path: android/app/build/outputs/apk/debug/

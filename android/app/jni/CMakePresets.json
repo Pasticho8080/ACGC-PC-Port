@@ -30,6 +30,15 @@
       }
     },
     {
+      "name": "android-armv7",
+      "displayName": "Android ARMv7",
+      "inherits": "android-base",
+      "binaryDir": "${sourceDir}/build/android-armv7",
+      "cacheVariables": {
+        "ANDROID_ABI": "armeabi-v7a"
+      }
+    },
+    {
       "name": "android-x86_64",
       "displayName": "Android x86_64",
       "inherits": "android-base",
@@ -41,6 +50,7 @@
   ],
   "buildPresets": [
     { "name": "android-arm64",  "configurePreset": "android-arm64" },
+    { "name": "android-armv7",  "configurePreset": "android-armv7" },
     { "name": "android-x86_64", "configurePreset": "android-x86_64" }
   ]
 }

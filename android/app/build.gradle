@@ -7,9 +7,6 @@ else {
     apply plugin: 'com.android.library'
 }
 
-/* One APK for all supported ABIs (both ARM variants). */
-def pcTargetAbis = ['arm64-v8a', 'armeabi-v7a']
-
 android {
     if (buildAsApplication) {
         namespace "github.pasticho8080.acgc"
@@ -28,7 +25,7 @@ android {
                           "-DPORT_GLES=ON",
                           "-DSDL_PATH=${rootProject.rootDir}/SDL",
                           "-DPC_DIR=${rootProject.rootDir}/../pc"
-                abiFilters pcTargetAbis
+                abiFilters 'arm64-v8a', 'armeabi-v7a'
             }
         }
     }
@@ -66,7 +63,7 @@ android {
             variant.outputs.each { output ->
                 def outputFile = output.outputFile
                 if (outputFile != null && outputFile.name.endsWith(".aar")) {
-                    def fileName = "github.pasticho8080.agc.aar";
+                    def fileName = "github.pasticho8080.acgc.aar";
                     output.outputFile = new File(outputFile.parent, fileName);
                 }
             }

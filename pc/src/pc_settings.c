@@ -22,7 +22,18 @@ PCSettings g_pc_settings = {
     .cstick_deadzone = 12,
 };
 
+#ifdef __ANDROID__
+#include "SDL.h"
+char gSettingsFile[512];
+void initSettingsFile() {
+    const char* ext = SDL_AndroidGetExternalStoragePath();
+    if (!ext) return;
+    snprintf(gSettingsFile, sizeof(gSettingsFile), "%s/settings.ini", ext);
+}
+static const char* SETTINGS_FILE = gSettingsFile;
+#else
 static const char* SETTINGS_FILE = "settings.ini";
+#endif
 
 static const char* DEFAULT_SETTINGS =
     "[Graphics]\n"
@@ -351,6 +362,9 @@ void pc_settings_apply(void) {
 }
 
 void pc_settings_load(void) {
+#ifdef __ANDROID__
+    initSettingsFile();
+#endif
     FILE* f = fopen(SETTINGS_FILE, "r");
     if (!f) {
         write_defaults(SETTINGS_FILE);

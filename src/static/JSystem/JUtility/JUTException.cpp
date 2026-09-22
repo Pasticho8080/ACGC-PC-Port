@@ -1,3 +1,7 @@
+#ifdef TARGET_PC
+#include <stdlib.h>
+#endif
+
 #include "MSL_C/MSL_Common/float.h"
 
 #include <dolphin/base/PPCArch.h>

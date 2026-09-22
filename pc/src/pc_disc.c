@@ -9,6 +9,11 @@
 #include "types.h"
 #include "pc_disc.h"
 
+#ifdef __ANDROID__
+#include "SDL.h"
+#include "android/log.h"
+#endif
+
 extern int g_pc_verbose;
 
 /* ---- endian helpers ---- */
@@ -286,6 +291,31 @@ static int str_ends_ci(const char* s, const char* suffix) {
 }
 
 static int find_disc_image(char* out_path, int out_sz) {
+#ifdef __ANDROID__
+    /* Android: CWD is "/" so relative dirs never match.
+        Scan <app external files>/rom instead (no runtime permission needed). */
+    {
+        const char* ext = SDL_AndroidGetExternalStoragePath();
+        if (ext) {
+            char romdir[768];
+            snprintf(romdir, sizeof(romdir), "%s/rom", ext);
+            DIR* dp = opendir(romdir);
+            if (dp) {
+                struct dirent* ent;
+                while ((ent = readdir(dp)) != NULL) {
+                    if (str_ends_ci(ent->d_name, ".ciso") ||
+                        str_ends_ci(ent->d_name, ".iso")  ||
+                        str_ends_ci(ent->d_name, ".gcm")) {
+                        snprintf(out_path, out_sz, "%s/%s", romdir, ent->d_name);
+                        closedir(dp);
+                        return 1;
+                    }
+                }
+                closedir(dp);
+            }
+        }
+    }
+#else
     static const char* dirs[] = { ".", "orig", "rom", NULL };
     int d;
 
@@ -307,6 +337,7 @@ static int find_disc_image(char* out_path, int out_sz) {
         }
         closedir(dp);
     }
+#endif
     return 0;
 }
 
@@ -329,8 +360,12 @@ int pc_disc_init(void) {
         u8 id[7];
         disc_read(&g_disc, 0, id, 6);
         id[6] = '\0';
+#ifdef __ANDROID__
+        __android_log_print(ANDROID_LOG_INFO, "ACGC", "Disc image: %s (%s, %s)", path, g_disc.is_ciso ? "CISO" : "ISO/GCM", id);
+#else
         if (g_pc_verbose) printf("[PC] Disc image: %s (%s, %s)\n",
             path, g_disc.is_ciso ? "CISO" : "ISO/GCM", id);
+#endif
     }
 
     /* cache DOL info */

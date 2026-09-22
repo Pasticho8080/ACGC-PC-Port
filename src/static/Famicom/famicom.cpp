@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <strings.h>
+#include <string.h>
 #include <dirent.h>
 extern "C" {
     void pc_fixnes_init(unsigned char* ines_data, int ines_size);
@@ -816,7 +817,7 @@ static void SetupInternalCommentImage(u8* data) {
         famicomCommon.memcard_game_header.icon_flags = 0;
     }
 
-    famicomCommon.memcard_game_header.comment_img_size = (u32)data - (u32)data_p;
+    famicomCommon.memcard_game_header.comment_img_size = (u32)(data - data_p);
 }
 
 static s32 memcard_data_save(
@@ -909,7 +910,7 @@ static s32 memcard_data_save(
                 goto exit;
             }
 
-            bool save_updated = bcmp(save_data, buf, save_data_size_block_aligned) == 0;
+            bool save_updated = memcmp(save_data, buf, save_data_size_block_aligned) == 0;
             if (save_updated) {
                 // No need to save, so the process has completed successfully.
                 OSReport("セーブする必要が無いので正常終了\n");
@@ -998,7 +999,7 @@ static s32 memcard_data_save(
             OSReport("ファイル全体のベリファイ\n");
             result = CARDRead(&fileInfo, buf, save_data_size_block_aligned, 0);
             if (result == CARD_RESULT_READY) {
-                if (bcmp(save_data, buf, save_data_size_block_aligned) == 0) {
+                if (memcmp(save_data, buf, save_data_size_block_aligned) == 0) {
                     // Verification successful.
                     OSReport("ベリファイ成功\n");
                 }
@@ -1199,7 +1200,7 @@ static s32 memcard_data_load(
 
         // Reading successful!
         OSReport("読み込み成功！！\n");
-        FamicomSaveDataHeader* read_save_header = (FamicomSaveDataHeader*)((u32)buf + status.offsetData);
+        FamicomSaveDataHeader* read_save_header = (FamicomSaveDataHeader*)((u8*)buf + status.offsetData);
         
         if (famicom_save_data_check(read_save_header, -1, comment_img) == 0) {
             // The data is normal!
@@ -2044,7 +2045,7 @@ static int SetupResBanner(const ResTIMG* img, u8* dst, size_t max_size, size_t* 
     }
 
     if (size != nullptr) {
-        *size = (u32)data_p - (u32)dst;
+        *size = (u32)(data_p - dst);
     }
 
     if (type != nullptr) {
@@ -2104,7 +2105,7 @@ static int SetupResIcon(const ResTIMG* img, u8* dst, size_t max_size, size_t* si
     }
 
     if (size_p != nullptr) {
-        *size_p = (u32)data_p - (u32)dst;
+        *size_p = (u32)(data_p - dst);
     }
 
     if (icon_fmt_p != nullptr) {

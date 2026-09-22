@@ -43,18 +43,36 @@
 #endif
 #include <dolphin/os.h>  /* OSReport */
 
+#ifdef __ANDROID__
+#include <SDL.h>
+#endif
+
 /* --- Path constants --- */
 #define PC_CARD_A_DIR     "save/card_a"
 #define PC_CARD_B_DIR     "save/card_b"
 #define PC_GCI_FILENAME   "DobutsunomoriP_MURA.gci"
-#define PC_GCI_PATH       PC_CARD_A_DIR "/" PC_GCI_FILENAME
-#define PC_GCI_TMP_PATH   PC_CARD_A_DIR "/" PC_GCI_FILENAME ".tmp"
 #define PC_SAVE_DIR       "save"
 #define PC_SAVE_MAX_BACKUPS 3
 
+#ifdef __ANDROID__
+/* Android: CWD is "/" so relative paths never match. Resolve these once
+ * against <app external files> at startup (pc_mcard_paths_init). */
+static char g_gci_path_a[512];
+static char g_gci_tmp_path_a[512];
+static char g_gci_path_legacy[512];
+static char g_gci_tmp_path_legacy[512];
+#define PC_GCI_PATH       g_gci_path_a
+#define PC_GCI_TMP_PATH   g_gci_tmp_path_a
 /* Legacy paths for migration from flat save/ layout */
-#define PC_GCI_PATH_LEGACY     "save/DobutsunomoriP_MURA.gci"
-#define PC_GCI_TMP_PATH_LEGACY "save/DobutsunomoriP_MURA.gci.tmp"
+#define PC_GCI_PATH_LEGACY     g_gci_path_legacy
+#define PC_GCI_TMP_PATH_LEGACY g_gci_tmp_path_legacy
+#else
+#define PC_GCI_PATH       PC_CARD_A_DIR "/" PC_GCI_FILENAME
+#define PC_GCI_TMP_PATH   PC_CARD_A_DIR "/" PC_GCI_FILENAME ".tmp"
+/* Legacy paths for migration from flat save/ layout */
+#define PC_GCI_PATH_LEGACY     "save/" PC_GCI_FILENAME
+#define PC_GCI_TMP_PATH_LEGACY "save/" PC_GCI_FILENAME ".tmp"
+#endif
 
 #define GCI_HEADER_SIZE      sizeof(CARDDir)        /* 64 bytes */
 #define GCI_FILE_DATA_SIZE   mCD_LAND_SAVE_SIZE     /* 0x72000 */
@@ -224,11 +242,34 @@ static void pc_save_rotate_backups(const char* base_path) {
     }
 }
 
+#ifdef __ANDROID__
+static int g_mcard_paths_init_done = 0;
+static void pc_mcard_paths_init(void) {
+    const char* ext;
+    if (g_mcard_paths_init_done) return;
+    g_mcard_paths_init_done = 1;
+    ext = SDL_AndroidGetExternalStoragePath();
+    if (!ext) return;
+    snprintf(g_gci_path_a, sizeof(g_gci_path_a), "%s/save/card_a/%s", ext, PC_GCI_FILENAME);
+    snprintf(g_gci_tmp_path_a, sizeof(g_gci_tmp_path_a), "%s/save/card_a/%s.tmp", ext, PC_GCI_FILENAME);
+    snprintf(g_gci_path_legacy, sizeof(g_gci_path_legacy), "%s/save/%s", ext, PC_GCI_FILENAME);
+    snprintf(g_gci_tmp_path_legacy, sizeof(g_gci_tmp_path_legacy), "%s/save/%s.tmp", ext, PC_GCI_FILENAME);
+}
+#endif
+
 static void pc_ensure_save_dirs(void) {
 #ifdef _WIN32
     _mkdir(PC_SAVE_DIR);
     _mkdir(PC_CARD_A_DIR);
     _mkdir(PC_CARD_B_DIR);
+#elif defined(__ANDROID__)
+    const char* ext = SDL_AndroidGetExternalStoragePath();
+    char d[512];
+    if (!ext) return;
+    pc_mcard_paths_init();
+    snprintf(d, sizeof(d), "%s/save", ext);        mkdir(d, 0755);
+    snprintf(d, sizeof(d), "%s/save/card_a", ext); mkdir(d, 0755);
+    snprintf(d, sizeof(d), "%s/save/card_b", ext); mkdir(d, 0755);
 #else
     mkdir(PC_SAVE_DIR, 0755);
     mkdir(PC_CARD_A_DIR, 0755);
@@ -568,7 +609,6 @@ static int pc_save_read_gci_to_keep(const char* path) {
     CARDDir dir_hdr;
     u8* file_data;
     Save_t* save_src;
-    u32 offset;
 
     fp = fopen(path, "rb");
     if (!fp) return FALSE;
@@ -679,17 +719,24 @@ static void pc_save_migrate_legacy(void) {
 static int pc_save_scan_gci_dir(void) {
     /* Try common AC save filenames in card_a/ */
     static const char* gci_names[] = {
-        PC_CARD_A_DIR "/DobutsunomoriP_MURA.gci",
-        PC_CARD_A_DIR "/8P-GAFE-DobutsunomoriP_MURA.gci",
+        "DobutsunomoriP_MURA.gci",
+        "8P-GAFE-DobutsunomoriP_MURA.gci",
         NULL
     };
+    char full[512];
     int i;
     struct stat st;
-
     for (i = 0; gci_names[i] != NULL; i++) {
-        if (stat(gci_names[i], &st) == 0) {
-            OSReport("[PC] GCI scan: found '%s'\n", gci_names[i]);
-            if (pc_save_read_gci(gci_names[i])) {
+#ifdef __ANDROID__
+        const char* ext = SDL_AndroidGetExternalStoragePath();
+        if (!ext) return FALSE;
+        snprintf(full, sizeof(full), "%s/save/card_a/%s", ext, gci_names[i]);
+#else
+        snprintf(full, sizeof(full), "save/card_a/%s", gci_names[i]);
+#endif
+        if (stat(full, &st) == 0) {
+            OSReport("[PC] GCI scan: found '%s'\n", full);
+            if (pc_save_read_gci(full)) {
                 return TRUE;
             }
         }
@@ -714,6 +761,9 @@ static int pc_save_scan_gci_dir(void) {
 int pc_save_reload(void) {
     struct stat st;
     if (!pc_save_loaded) return 0;
+#ifdef __ANDROID__
+    pc_mcard_paths_init();
+#endif
     if (stat(PC_GCI_PATH, &st) == 0) {
         return pc_save_read_gci(PC_GCI_PATH);
     }

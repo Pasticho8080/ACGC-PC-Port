@@ -82,7 +82,7 @@ JKRArchive* JKRArchive::mount(const char* path, EMountMode mode, JKRHeap* heap, 
 }
 
 JKRArchive* JKRArchive::mount(void* p1, JKRHeap* heap, EMountDirection mountDirection) {
-    JKRArchive* archive = check_mount_already((s32)p1, heap);
+    JKRArchive* archive = check_mount_already((s32)(intptr_t)p1, heap);
     if (archive != nullptr) {
         return archive;
     }

@@ -16,6 +16,7 @@ option(PORT_GLES "Force OpenGL ES 3.0 instead of desktop OpenGL" OFF)
 # =============================================================================
 # Platform info
 # =============================================================================
+
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)
     message(STATUS "Building as 64-bit (pointer size = 8 bytes)")
 else()
@@ -34,6 +35,7 @@ add_compile_definitions(
     VERSION=0
     F3DEX_GBI_2
     NDEBUG
+    FIXES
     BUGFIXES       # Fix original game bugs (buffer overflows, etc.) that crash on modern platforms
     _LANGUAGE_C    # Required for N64 GBI/ultratypes headers
     PC_ENHANCEMENTS   # Optional visual improvements (MSAA, etc). Remove to get pure PC port.
@@ -83,59 +85,61 @@ include_directories(
 if(WIN32)
     set(SDL2_DIR "${CMAKE_CURRENT_SOURCE_DIR}/lib/SDL2/cmake" CACHE PATH "SDL2 cmake dir")
 endif()
-find_package(SDL2 QUIET)
-if(NOT SDL2_FOUND)
-    # Try pkg-config (works on both Linux and MSYS2)
-    find_package(PkgConfig QUIET)
-    if(PKG_CONFIG_FOUND)
-        pkg_check_modules(SDL2 QUIET sdl2)
+if(NOT ANDROID)
+    find_package(SDL2 QUIET)
+    if(NOT SDL2_FOUND)
+        # Try pkg-config (works on both Linux and MSYS2)
+        find_package(PkgConfig QUIET)
+        if(PKG_CONFIG_FOUND)
+            pkg_check_modules(SDL2 QUIET sdl2)
+        endif()
     endif()
-endif()
-if(NOT SDL2_FOUND)
-    if(WIN32)
-        # Windows-specific fallback paths
-        # MSYS2 32-bit location
-        set(SDL2_MSYS2_DIR "C:/msys64/mingw32")
-        if(EXISTS "${SDL2_MSYS2_DIR}/include/SDL2/SDL.h")
-            set(SDL2_FOUND TRUE)
-            set(SDL2_INCLUDE_DIRS "${SDL2_MSYS2_DIR}/include/SDL2")
-            set(SDL2_LIBRARIES "${SDL2_MSYS2_DIR}/lib/libSDL2.a")
-        else()
-            # Downloaded SDL2 MinGW dev package (32-bit)
-            set(SDL2_DOWNLOAD_DIR "${DECOMP_ROOT}/../SDL2-2.30.10/i686-w64-mingw32")
-            if(EXISTS "${SDL2_DOWNLOAD_DIR}/include/SDL2/SDL.h")
+    if(NOT SDL2_FOUND)
+        if(WIN32)
+            # Windows-specific fallback paths
+            # MSYS2 32-bit location
+            set(SDL2_MSYS2_DIR "C:/msys64/mingw32")
+            if(EXISTS "${SDL2_MSYS2_DIR}/include/SDL2/SDL.h")
                 set(SDL2_FOUND TRUE)
-                set(SDL2_INCLUDE_DIRS "${SDL2_DOWNLOAD_DIR}/include/SDL2")
-                set(SDL2_LIBRARIES "${SDL2_DOWNLOAD_DIR}/lib/libSDL2.a")
+                set(SDL2_INCLUDE_DIRS "${SDL2_MSYS2_DIR}/include/SDL2")
+                set(SDL2_LIBRARIES "${SDL2_MSYS2_DIR}/lib/libSDL2.a")
             else()
-                # Last resort: vendored SDL2 in lib/
-                set(SDL2_LOCAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/lib/SDL2")
-                if(EXISTS "${SDL2_LOCAL_DIR}/include/SDL.h")
+                # Downloaded SDL2 MinGW dev package (32-bit)
+                set(SDL2_DOWNLOAD_DIR "${DECOMP_ROOT}/../SDL2-2.30.10/i686-w64-mingw32")
+                if(EXISTS "${SDL2_DOWNLOAD_DIR}/include/SDL2/SDL.h")
                     set(SDL2_FOUND TRUE)
-                    set(SDL2_INCLUDE_DIRS "${SDL2_LOCAL_DIR}/include")
-                    set(SDL2_LIBRARIES "${SDL2_LOCAL_DIR}/lib/libSDL2.a")
+                    set(SDL2_INCLUDE_DIRS "${SDL2_DOWNLOAD_DIR}/include/SDL2")
+                    set(SDL2_LIBRARIES "${SDL2_DOWNLOAD_DIR}/lib/libSDL2.a")
+                else()
+                    # Last resort: vendored SDL2 in lib/
+                    set(SDL2_LOCAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/lib/SDL2")
+                    if(EXISTS "${SDL2_LOCAL_DIR}/include/SDL.h")
+                        set(SDL2_FOUND TRUE)
+                        set(SDL2_INCLUDE_DIRS "${SDL2_LOCAL_DIR}/include")
+                        set(SDL2_LIBRARIES "${SDL2_LOCAL_DIR}/lib/libSDL2.a")
+                    endif()
                 endif()
             endif()
         endif()
-    endif()
 
-    if(NOT SDL2_FOUND)
-        message(FATAL_ERROR
-            "SDL2 not found!\n"
-            "  macOS:         brew install sdl2\n"
-            "  Linux:         sudo apt install libsdl2-dev  (Debian/Ubuntu)\n"
-            "                 sudo dnf install SDL2-devel   (Fedora)\n"
-            "  Windows/MSYS2: pacman -S mingw-w64-i686-SDL2\n"
-            "  Or download SDL2 development libraries to ${CMAKE_CURRENT_SOURCE_DIR}/lib/SDL2")
+        if(NOT SDL2_FOUND)
+            message(FATAL_ERROR
+                "SDL2 not found!\n"
+                "  macOS:         brew install sdl2\n"
+                "  Linux:         sudo apt install libsdl2-dev  (Debian/Ubuntu)\n"
+                "                 sudo dnf install SDL2-devel   (Fedora)\n"
+                "  Windows/MSYS2: pacman -S mingw-w64-i686-SDL2\n"
+                "  Or download SDL2 development libraries to ${CMAKE_CURRENT_SOURCE_DIR}/lib/SDL2")
+        endif()
     endif()
-endif()
-include_directories(${SDL2_INCLUDE_DIRS})
-message(STATUS "SDL2 include: ${SDL2_INCLUDE_DIRS}")
-message(STATUS "SDL2 libraries: ${SDL2_LIBRARIES}")
+    include_directories(${SDL2_INCLUDE_DIRS})
+    message(STATUS "SDL2 include: ${SDL2_INCLUDE_DIRS}")
+    message(STATUS "SDL2 libraries: ${SDL2_LIBRARIES}")
 
-# Fix SDL2 target for 32-bit Linux multilib builds
-if(UNIX AND NOT APPLE AND CMAKE_SIZEOF_VOID_P EQUAL 4)
-    include(cmake/FixSDL2-i686.cmake)
+    # Fix SDL2 target for 32-bit Linux multilib builds
+    if(UNIX AND NOT APPLE AND CMAKE_SIZEOF_VOID_P EQUAL 4)
+        include(cmake/FixSDL2-i686.cmake)
+    endif()
 endif()
 
 # =============================================================================
@@ -396,9 +400,13 @@ set_source_files_properties(
 # -Wno-return-type: missing return values in non-void functions
 # -Wno-initializer-overrides: GBI macros use designated initializers with overlapping fields
 set(DECOMP_WARN_FLAGS "-w;-fpermissive;-Wno-return-type;-Wno-error=return-type")
+
 if(CMAKE_C_COMPILER_ID MATCHES "Clang")
-    list(APPEND DECOMP_WARN_FLAGS "-Wno-c99-designator" "-Wno-initializer-overrides")
-    if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+    list(APPEND DECOMP_WARN_FLAGS "-Wno-c99-designator" "-Wno-initializer-overrides" "-Wno-implicit-int"
+        "-Wno-implicit-function-declaration" "-Wno-c++11-narrowing" "-Wno-pointer-to-int-cast" 
+        "-Wno-register" "-Wno-int-conversion" "-Wno-incompatible-function-pointer-types"
+        )
+    if(CMAKE_SIZEOF_VOID_P EQUAL 8 AND NOT ANDROID)
         message(FATAL_ERROR
             "64-bit builds require GCC (Clang rejects pointer-to-u32 truncation in GBI static initializers).\n"
             "  macOS:  brew install gcc && cmake .. -DCMAKE_C_COMPILER=gcc-15 -DCMAKE_CXX_COMPILER=g++-15\n"
@@ -406,6 +414,7 @@ if(CMAKE_C_COMPILER_ID MATCHES "Clang")
             "  Linux:  GCC is typically the default compiler.")
     endif()
 endif()
+
 set_source_files_properties(${GAME_C_SOURCES} ${GAME_CXX_SOURCES}
     PROPERTIES COMPILE_OPTIONS "${DECOMP_WARN_FLAGS}"
 )
@@ -438,23 +447,37 @@ endif()
 # =============================================================================
 # Build executable
 # =============================================================================
-add_executable(ac_pc
-    ${PC_SOURCES}
-    ${FIXNES_SOURCES}
-    ${GAME_C_SOURCES}
-    ${GAME_CXX_SOURCES}
-    ${RC_FILE}
-)
+
+if(ANDROID)
+    set_source_files_properties(
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/pc_main.c"
+        PROPERTIES COMPILE_DEFINITIONS "main=SDL_main"
+    )
+    add_library(main SHARED ${PC_SOURCES} ${FIXNES_SOURCES} ${GAME_C_SOURCES} ${GAME_CXX_SOURCES})
+    set_target_properties(main PROPERTIES OUTPUT_NAME "main")
+else()
+    add_executable(ac_pc
+        ${PC_SOURCES}
+        ${FIXNES_SOURCES}
+        ${GAME_C_SOURCES}
+        ${GAME_CXX_SOURCES}
+        ${RC_FILE}
+    )
+endif()
 
 # Link SDL2 without SDL2main (we define SDL_MAIN_HANDLED)
-if(TARGET SDL2::SDL2)
+if(ANDROID)
+    target_link_libraries(main glad SDL2::SDL2-static log android dl)
+elseif(TARGET SDL2::SDL2)
     target_link_libraries(ac_pc glad SDL2::SDL2)
 else()
     list(FILTER SDL2_LIBRARIES EXCLUDE REGEX "SDL2main")
     target_link_libraries(ac_pc glad ${SDL2_LIBRARIES})
 endif()
 
-if(PORT_GLES)
+if(ANDROID)
+    # GLES/EGL come transitively from SDL2::SDL2-static
+elseif(PORT_GLES)
     if(UNIX AND NOT APPLE)
         target_link_libraries(ac_pc dl pthread m)
     endif()
@@ -468,12 +491,15 @@ else()
     target_link_libraries(ac_pc OpenGL::GL dl pthread m)
 endif()
 
+if(NOT ANDROID)
 set_target_properties(ac_pc PROPERTIES
     OUTPUT_NAME "AnimalCrossing"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
+endif()
 
 # Copy shader files to output directory (loaded at runtime, with embedded fallback)
+if(NOT ANDROID)
 add_custom_command(TARGET ac_pc POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/bin/shaders"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -482,6 +508,7 @@ add_custom_command(TARGET ac_pc POST_BUILD
         "${CMAKE_BINARY_DIR}/bin/shaders/"
     COMMENT "Copying shader files to bin/shaders/"
 )
+endif()
 
 # Copy SDL2.dll next to executable so users don't need it on PATH
 if(WIN32)
@@ -533,8 +560,10 @@ endif()
 # =============================================================================
 # Install rules (cmake --install . --prefix <dest>)
 # =============================================================================
+if(NOT ANDROID)
 install(TARGETS ac_pc RUNTIME DESTINATION bin)
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/shaders/"
     DESTINATION bin/shaders
     FILES_MATCHING PATTERN "*.vert" PATTERN "*.frag"
 )
+endif()

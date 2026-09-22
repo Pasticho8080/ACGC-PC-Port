@@ -114,7 +114,7 @@ void JKRAramPiece::startDMA(JKRAMCommand* cmd) {
     }
 
 #ifdef TARGET_PC
-    ARQPostRequest(cmd, 0, cmd->mDirection, 0, cmd->mSource, cmd->mDestination, cmd->mLength, JKRAramPiece::doneDMA);
+    ARQPostRequest(cmd, 0, cmd->mDirection, 0, cmd->mSource, cmd->mDestination, cmd->mLength, (void*)JKRAramPiece::doneDMA);
 #else
     ARQPostRequest(cmd, 0, cmd->mDirection, 0, (u32)cmd->mSource, (u32)cmd->mDestination, cmd->mLength, JKRAramPiece::doneDMA);
 #endif

@@ -15,6 +15,10 @@
 #include "pc_profiler.h"
 #include "m_kankyo.h"
 
+#ifdef __ANDROID__
+#include <android/log.h>
+#endif
+
 /* prefer discrete GPU on laptops */
 #ifdef _WIN32
 __declspec(dllexport) unsigned long NvOptimusEnablement = 1;

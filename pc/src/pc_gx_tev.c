@@ -1,6 +1,21 @@
 #include "pc_gx_internal.h"
 #include "pc_shader_seed.h"
 
+#ifdef __ANDROID__
+#include <android/log.h>
+
+#define ACGC_TAG "ACGCP"
+
+/* Info: normal state/progress */
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, ACGC_TAG, __VA_ARGS__)
+/* Warning: recoverable problems */
+#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, ACGC_TAG, __VA_ARGS__)
+/* Fatal: unrecoverable problems (logs at FATAL priority, does NOT abort) */
+#define LOGF(...) __android_log_print(ANDROID_LOG_FATAL, ACGC_TAG, __VA_ARGS__)
+
+#include <SDL.h>
+#endif
+
 int g_pc_uber_shader_only = 0; /* --uber-shader: disable specialization */
 
 /* --- file I/O --- */
@@ -20,7 +35,11 @@ static char* load_text_file(const char* path) {
     size_t read = fread(buf, 1, (size_t)len, f);
     fclose(f);
     if (read != (size_t)len) {
+#ifdef __ANDROID__
+        LOGW("Partial read of %s (got %zu of %ld bytes)", path, read, len);
+#else
         fprintf(stderr, "WARNING: Partial read of %s (got %zu of %ld bytes)\n", path, read, len);
+#endif
         free(buf);
         return NULL;
     }
@@ -30,10 +49,24 @@ static char* load_text_file(const char* path) {
 
 static char* load_shader(const char* filename) {
     char path[512];
+#ifdef __ANDROID__
+    /* Android: CWD is "/" so relative dirs never match.
+       Read shaders from <app external files>/shaders instead. */
+    {
+        const char* ext = SDL_AndroidGetExternalStoragePath();
+        if (!ext) return NULL;
+        snprintf(path, sizeof(path), "%s/shaders/%s", ext, filename);
+    }
+#else
     snprintf(path, sizeof(path), "shaders/%s", filename);
+#endif
     char* src = load_text_file(path);
     if (src) {
+#ifdef __ANDROID__
+        LOGI("[TEV] Loaded shader: %s", path);
+#else
         printf("[PC/TEV] Loaded shader: %s\n", path);
+#endif
 #ifdef PORT_GLES
         /* The file ships with "#version 330 core"; on GLES replace the first line
             with 300 es + default precision (required in fragment shaders). */
@@ -53,7 +86,11 @@ static char* load_shader(const char* filename) {
         src = out;
 #endif
     } else {
+#ifdef __ANDROID__
+        LOGF("Could not load shader: %s", path);
+#else
         fprintf(stderr, "FATAL: Could not load shader: %s\n", path);
+#endif
     }
     return src;
 }
@@ -74,7 +111,11 @@ static GLuint compile_shader(GLenum type, const char* source) {
     if (!success) {
         char log[512];
         glGetShaderInfoLog(shader, sizeof(log), NULL, log);
+#ifdef __ANDROID__
+        LOGW("Shader compile error: %s", log);
+#else
         fprintf(stderr, "WARNING: Shader compile error: %s\n", log);
+#endif
         glDeleteShader(shader);
         return 0;
     }
@@ -104,7 +145,11 @@ static GLuint link_program(GLuint vert, GLuint frag) {
     if (!success) {
         char log[512];
         glGetProgramInfoLog(prog, sizeof(log), NULL, log);
+#ifdef __ANDROID__
+        LOGW("Program link error: %s", log);
+#else
         fprintf(stderr, "WARNING: Program link error: %s\n", log);
+#endif
         glDeleteProgram(prog);
         prog = 0;
     }
@@ -145,10 +190,24 @@ static int s_precompiling = 0;
 
 /* Keys seen in earlier runs are precompiled at boot so first encounters
  * don't hitch mid-game (driver GLSL compiles can take tens of ms) */
+
+#ifdef __ANDROID__
+char gPC_GX_Key_Cache_File[512];
+void initPC_GX_Key_Cache_File() {
+    const char* ext = SDL_AndroidGetExternalStoragePath();
+    if (!ext) return;
+    snprintf(gPC_GX_Key_Cache_File, sizeof(gPC_GX_Key_Cache_File), "%s/shader_cache.bin", ext);
+}
+#define PC_GX_KEY_CACHE_FILE gPC_GX_Key_Cache_File
+#else
 #define PC_GX_KEY_CACHE_FILE  "shader_cache.bin"
+#endif
 #define PC_GX_KEY_CACHE_MAGIC 0x41435356u /* ACSV */
 
 static void key_cache_append(const PCGXShaderKey* k) {
+#ifdef __ANDROID__
+    initPC_GX_Key_Cache_File();
+#endif
     FILE* f = fopen(PC_GX_KEY_CACHE_FILE, "r+b");
     if (!f) {
         f = fopen(PC_GX_KEY_CACHE_FILE, "wb");
@@ -423,16 +482,27 @@ static PCGXShaderVariant* compile_variant(const PCGXShaderKey* k) {
     if (!prog) {
         /* Fall back to the uber program for this config; entry stays cached
          * so the failing compile isn't retried every flush */
+#ifdef __ANDROID__
+        LOGW("shader variant compile failed, using uber shader");
+#else
         fprintf(stderr, "WARNING: shader variant compile failed, using uber shader\n");
+#endif
         prog = default_program;
     } else if (!s_precompiling) {
         key_cache_append(k);
     }
     if (prog != default_program && g_pc_verbose) {
+#ifdef __ANDROID__
+        LOGI("[TEV] shader variant %d compiled (stages=%d tex=%d%d%d light=%d ind=%d fog=%d)",
+               s_variant_count, k->num_stages,
+               k->st[0].use_tex, k->st[1].use_tex, k->st[2].use_tex,
+               k->light[0], k->num_ind, k->fog_enable);
+#else
         printf("[PC/TEV] shader variant %d compiled (stages=%d tex=%d%d%d light=%d ind=%d fog=%d)\n",
                s_variant_count, k->num_stages,
                k->st[0].use_tex, k->st[1].use_tex, k->st[2].use_tex,
                k->light[0], k->num_ind, k->fog_enable);
+#endif
     }
 
     variant_init(v, prog);
@@ -466,8 +536,13 @@ PCGXShaderVariant* pc_gx_tev_get_variant(void) {
 
     if (s_variant_count >= PC_GX_SHADER_CACHE_SIZE) {
         if (!s_cache_full_warned) {
-            fprintf(stderr, "WARNING: shader variant cache full (%d), new configs use uber shader\n",
+#ifdef __ANDROID__
+        LOGW("shader variant cache full (%d), new configs use uber shader",
                     PC_GX_SHADER_CACHE_SIZE);
+#else
+        fprintf(stderr, "WARNING: shader variant cache full (%d), new configs use uber shader\n",
+                    PC_GX_SHADER_CACHE_SIZE);
+#endif
             s_cache_full_warned = 1;
         }
         s_current = &s_uber;
@@ -524,7 +599,11 @@ static void pc_gx_tev_precompile_cached(void) {
             if (precompile_key(&key) == 1) loaded++;
         }
     } else {
+#ifdef __ANDROID__
+        LOGW("pc_shader_seed.h key size mismatch, regenerate with gen_shader_seed.py");
+#else
         fprintf(stderr, "WARNING: pc_shader_seed.h key size mismatch, regenerate with gen_shader_seed.py\n");
+#endif
     }
 
     /* Local cache: configs this machine discovered beyond the seed */
@@ -536,7 +615,11 @@ static void pc_gx_tev_precompile_cached(void) {
             /* Stale format (key struct changed): drop the file */
             fclose(f);
             remove(PC_GX_KEY_CACHE_FILE);
+#ifdef __ANDROID__
+            LOGI("[TEV] shader key cache format changed, discarded");
+#else
             printf("[PC/TEV] shader key cache format changed, discarded\n");
+#endif 
         } else {
             /* Bad entries mean a torn file: rewrite with the good ones */
             static PCGXShaderKey good[PC_GX_SHADER_CACHE_SIZE];
@@ -558,15 +641,28 @@ static void pc_gx_tev_precompile_cached(void) {
                     if (ngood) fwrite(good, sizeof(good[0]), (size_t)ngood, w);
                     fclose(w);
                 }
-                fprintf(stderr, "WARNING: shader key cache had %d bad entries, rewrote %s\n",
+#ifdef __ANDROID__
+                    LOGW("shader key cache had %d bad entries, rewrote %s",
                         bad, PC_GX_KEY_CACHE_FILE);
+#else
+                    fprintf(stderr, "WARNING: shader key cache had %d bad entries, rewrote %s\n",
+                        bad, PC_GX_KEY_CACHE_FILE);
+#endif
             }
         }
     }
 
     s_precompiling = 0;
-    if (loaded) printf("[PC/TEV] precompiled %d shader variants in %lums\n",
+    
+    if (loaded) {
+#ifdef __ANDROID__
+        LOGI("[TEV] precompiled %d shader variants in %lums",
                        loaded, (unsigned long)(SDL_GetTicks() - t0));
+#else
+        printf("[PC/TEV] precompiled %d shader variants in %lums\n",
+                       loaded, (unsigned long)(SDL_GetTicks() - t0));
+#endif
+    }
 }
 
 /* --- init / shutdown --- */
@@ -576,9 +672,16 @@ void pc_gx_tev_init(void) {
     char* fs_src = load_shader("default.frag");
 
     if (!vs_src || !fs_src) {
+#ifdef __ANDROID__
+        LOGF("Shader files missing from shaders/ directory.\n"
+                                        "Expected: shaders/default.vert and shaders/default.frag\n"
+                                        "Make sure shader files are next to the executable.");
+#else
         fprintf(stderr, "FATAL: Shader files missing from shaders/ directory.\n"
                         "Expected: shaders/default.vert and shaders/default.frag\n"
                         "Make sure shader files are next to the executable.\n");
+#endif
+        
         free(vs_src);
         free(fs_src);
         exit(1);
@@ -590,7 +693,11 @@ void pc_gx_tev_init(void) {
     free(vs_src);
 
     if (!default_program) {
+#ifdef __ANDROID__
+        LOGF("uber shader failed to compile/link.");
+#else
         fprintf(stderr, "FATAL: uber shader failed to compile/link.\n");
+#endif
         free(fs_src);
         exit(1);
     }

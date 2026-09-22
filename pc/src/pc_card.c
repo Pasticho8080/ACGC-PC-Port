@@ -77,11 +77,28 @@ static void card_slot_free(CARDFileInfo_PC* fi) {
     }
 }
 
+#ifdef __ANDROID__
+static char card_dir_path[2][512];
+#endif
+
 /* Per-channel directory: chan 0 = card_a, chan 1 = card_b */
 static const char* card_dir[2] = { "save/card_a", "save/card_b" };
 static int card_mounted[2] = {0, 0};
 
 static const char* get_card_dir(s32 chan) {
+#ifdef __ANDROID__
+    static int resolved = 0;
+    if (!resolved) {
+        const char* ext = SDL_AndroidGetExternalStoragePath();
+        if (ext) {
+            snprintf(card_dir_path[0], sizeof(card_dir_path[0]), "%s/save/card_a", ext);
+            snprintf(card_dir_path[1], sizeof(card_dir_path[1]), "%s/save/card_b", ext);
+            card_dir[0] = card_dir_path[0];
+            card_dir[1] = card_dir_path[1];
+            resolved = 1;
+        }
+    }
+#endif
     if (chan >= 0 && chan <= 1) return card_dir[chan];
     return card_dir[0];
 }
@@ -97,7 +114,14 @@ static int card_filename_safe(const char* name) {
 #define CARD_SECTOR_SIZE 8192
 
 static void ensure_dirs(void) {
-#ifdef _WIN32
+#ifdef __ANDROID__
+    const char* ext = SDL_AndroidGetExternalStoragePath();
+    char d[512];
+    if (!ext) return;
+    snprintf(d, sizeof(d), "%s/save", ext);        mkdir(d, 0755);
+    snprintf(d, sizeof(d), "%s/save/card_a", ext); mkdir(d, 0755);
+    snprintf(d, sizeof(d), "%s/save/card_b", ext); mkdir(d, 0755);
+#elif defined(_WIN32)
     _mkdir("save");
     _mkdir("save/card_a");
     _mkdir("save/card_b");

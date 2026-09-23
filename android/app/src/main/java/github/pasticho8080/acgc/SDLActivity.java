@@ -13,6 +13,7 @@ import android.content.pm.ActivityInfo;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
+import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.PorterDuff;
@@ -23,6 +24,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
+import android.provider.OpenableColumns;
 import android.text.Editable;
 import android.text.InputType;
 import android.text.Selection;
@@ -50,6 +52,9 @@ import android.widget.RelativeLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.util.Hashtable;
 import java.util.Locale;
 
@@ -1023,6 +1028,119 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
 
         Log.v(TAG, "setOrientation() requestedOrientation=" + req + " width=" + w +" height="+ h +" resizable=" + resizable + " hint=" + hint);
         mSingleton.setRequestedOrientation(req);
+    }
+
+    /* --- ROM picker (used when no disc image is found at startup) ----------
+     * Triggered from native code (android_rom_pick in android_touch.c) after
+     * the "No ROM found" message box is answered with "Select ROM...". The
+     * picked file is copied to <external>/rom/ and the app restarts to boot it.
+     * All user-facing strings are in English, matching the rest of the port. */
+
+    private static final int REQUEST_PICK_ROM = 0x524F4D; /* "ROM" */
+
+    public static void pickRom() {
+        if (mSingleton == null) return;
+        mSingleton.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType("*/*");
+                try {
+                    mSingleton.startActivityForResult(intent, REQUEST_PICK_ROM);
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                    Toast.makeText(mSingleton, "No file picker available on this device.", Toast.LENGTH_LONG).show();
+                    mSingleton.finish();
+                }
+            }
+        });
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == REQUEST_PICK_ROM) {
+            if (resultCode == RESULT_OK && data != null && data.getData() != null) {
+                if (copyPickedRom(data.getData())) {
+                    Toast.makeText(this, "ROM copied. Restarting...", Toast.LENGTH_LONG).show();
+                    restartApp();
+                } else {
+                    Toast.makeText(this, "Could not copy the selected ROM.", Toast.LENGTH_LONG).show();
+                    finish();
+                }
+            } else {
+                Toast.makeText(this, "No ROM selected.", Toast.LENGTH_LONG).show();
+                finish();
+            }
+            return;
+        }
+        super.onActivityResult(requestCode, resultCode, data);
+    }
+
+    /* Copies the picked content Uri into <external>/rom/ so the C side finds it. */
+    private boolean copyPickedRom(Uri uri) {
+        File base = getExternalFilesDir(null);
+        if (base == null) return false;
+        try {
+            File romDir = new File(base, "rom");
+            if (!romDir.exists() && !romDir.mkdirs()) return false;
+
+            File dst = new File(romDir, queryPickedName(uri));
+
+            InputStream in = getContentResolver().openInputStream(uri);
+            if (in == null) return false;
+            FileOutputStream out = new FileOutputStream(dst);
+            byte[] buf = new byte[65536];
+            int n;
+            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            out.flush();
+            out.getFD().sync();      /* make sure it is on disk before restarting */
+            out.close();
+            in.close();
+            return true;
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            return false;
+        }
+    }
+
+    private String queryPickedName(Uri uri) {
+        String name = null;
+        try {
+            Cursor c = getContentResolver().query(uri, null, null, null, null);
+            if (c != null) {
+                try {
+                    if (c.moveToFirst()) {
+                        int idx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                        if (idx >= 0) name = c.getString(idx);
+                    }
+                } finally {
+                    c.close();
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        if (name == null || name.trim().isEmpty()) name = "rom.ciso";
+        name = name.replaceAll("[/\\\\]", "_");
+        String low = name.toLowerCase();
+        if (!low.endsWith(".ciso") && !low.endsWith(".iso") && !low.endsWith(".gcm")) {
+            name += ".iso";          /* find_disc_image() filters by extension */
+        }
+        return name;
+    }
+
+    /* Restart the app so the game boots with the newly copied ROM. */
+    private void restartApp() {
+        try {
+            Intent i = getPackageManager().getLaunchIntentForPackage(getPackageName());
+            if (i != null) {
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                startActivity(i);
+            }
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+        finish();
     }
 
     /**

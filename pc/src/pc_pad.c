@@ -2,6 +2,9 @@
 #include "pc_platform.h"
 #include "pc_typing.h"
 #include "pc_keybindings.h"
+#ifdef __ANDROID__
+#include "android_touch.h"
+#endif
 #include "pc_settings.h"
 #include <dolphin/pad.h>
 
@@ -163,6 +166,10 @@ u32 PADRead(PADStatus* status) {
         status[0].triggerLeft  = pad_trigger_value(pb->l);
         status[0].triggerRight = pad_trigger_value(pb->r);
     }
+
+#ifdef __ANDROID__
+    android_touch_apply(&buttons, &stickX, &stickY);
+#endif
 
     status[0].button = buttons;
     status[0].stickX = stickX;

@@ -47,23 +47,59 @@ static char* load_text_file(const char* path) {
     return buf;
 }
 
+/* Same as load_text_file but from an SDL_RWops (e.g. an APK asset on Android). */
+static char* load_text_rw(SDL_RWops* rw) {
+    if (!rw) return NULL;
+    Sint64 len = SDL_RWsize(rw);
+    if (len <= 0) { SDL_RWclose(rw); return NULL; }
+
+    char* buf = (char*)malloc((size_t)len + 1);
+    if (!buf) { SDL_RWclose(rw); return NULL; }
+
+    size_t got = SDL_RWread(rw, buf, 1, (size_t)len);
+    SDL_RWclose(rw);
+    if (got != (size_t)len) {
+#ifdef __ANDROID__
+        LOGW("Short read of embedded shader asset (%zu of %lld bytes)", got, (long long)len);
+#else
+        fprintf(stderr, "WARNING: Short read of shader asset (%zu bytes)\n", got);
+#endif
+        free(buf);
+        return NULL;
+    }
+    buf[got] = '\0';
+    return buf;
+}
+
 static char* load_shader(const char* filename) {
     char path[512];
+    char* src = NULL;
 #ifdef __ANDROID__
     /* Android: CWD is "/" so relative dirs never match.
-       Read shaders from <app external files>/shaders instead. */
+       Try the user files in <app external files>/shaders first, then the copy
+       bundled inside the APK (assets/shaders/) so the game works with no files
+       pushed to the device and survives app-id changes. */
     {
         const char* ext = SDL_AndroidGetExternalStoragePath();
-        if (!ext) return NULL;
-        snprintf(path, sizeof(path), "%s/shaders/%s", ext, filename);
+        if (ext) {
+            snprintf(path, sizeof(path), "%s/shaders/%s", ext, filename);
+            src = load_text_file(path);
+            if (src) LOGI("[TEV] Loaded shader: %s", path);
+        }
+        if (!src) {
+            char apost[256];
+            snprintf(apost, sizeof(apost), "shaders/%s", filename);
+            src = load_text_rw(SDL_RWFromFile(apost, "rb"));
+            if (src) LOGI("[TEV] Loaded bundled shader: %s", filename);
+        }
     }
 #else
     snprintf(path, sizeof(path), "shaders/%s", filename);
+    src = load_text_file(path);
 #endif
-    char* src = load_text_file(path);
     if (src) {
 #ifdef __ANDROID__
-        LOGI("[TEV] Loaded shader: %s", path);
+        /* load path already logged above */
 #else
         printf("[PC/TEV] Loaded shader: %s\n", path);
 #endif
@@ -87,7 +123,7 @@ static char* load_shader(const char* filename) {
 #endif
     } else {
 #ifdef __ANDROID__
-        LOGF("Could not load shader: %s", path);
+        LOGF("Could not load shader: %s", filename);
 #else
         fprintf(stderr, "FATAL: Could not load shader: %s\n", path);
 #endif

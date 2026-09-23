@@ -17,6 +17,7 @@
 
 #ifdef __ANDROID__
 #include <android/log.h>
+#include "android_touch.h"
 #endif
 
 /* prefer discrete GPU on laptops */
@@ -130,6 +131,10 @@ void pc_platform_init(void) {
         exit(1);
     }
 
+#ifdef __ANDROID__
+    SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
+#endif
+
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
 #ifdef PORT_GLES
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
@@ -237,6 +242,9 @@ void pc_platform_init(void) {
 
     pc_gx_init();
     pc_texture_pack_init();
+#ifdef __ANDROID__
+    android_touch_init();
+#endif
 #ifdef PC_ENHANCEMENTS
     if (g_pc_settings.preload_textures) {
         pc_texture_pack_preload_all();
@@ -259,6 +267,9 @@ void pc_platform_shutdown(void) {
     pc_audio_mq_shutdown();
     PADCleanup();
     pc_texture_pack_shutdown();
+#ifdef __ANDROID__
+    android_touch_shutdown();
+#endif
     pc_gx_shutdown();
 
     if (g_pc_gl_context) {
@@ -280,6 +291,9 @@ void pc_platform_update_window_size(void) {
 
 void pc_platform_swap_buffers(void) {
     pc_gx_draw_pending();
+#ifdef __ANDROID__
+    android_touch_draw();
+#endif
     SDL_GL_SwapWindow(g_pc_window);
 }
 
@@ -359,6 +373,13 @@ int pc_platform_poll_events(void) {
                 if (g_pc_paused) break;
                 pc_typing_handle_event(&event);
                 break;
+#ifdef __ANDROID__
+            case SDL_FINGERDOWN:
+            case SDL_FINGERMOTION:
+            case SDL_FINGERUP:
+                android_touch_handle_event(&event);
+                break;
+#endif
         }
     }
     return 1;
@@ -565,6 +586,46 @@ int main(int argc, char* argv[]) {
     pc_platform_init();
     pc_disc_init();
     if (!pc_assets_init()) {
+#ifdef __ANDROID__
+        {
+            /* No ROM on Android: tell the user (in English, like the rest of
+               the port) where to look and let them pick a disc image with the
+               system file picker. On a successful pick the Java side copies
+               the file to <external>/rom/ and restarts the app to boot it. */
+            const char* ext = SDL_AndroidGetExternalStoragePath();
+            char romdir[640];
+            snprintf(romdir, sizeof(romdir), "%s/rom", ext ? ext : "<app data>/files");
+
+            for (;;) {
+                char msg[1024];
+                snprintf(msg, sizeof(msg),
+                         "No GameCube disc image (.iso, .gcm or .ciso) was found in:\n%s/\n\n"
+                         "Animal Crossing needs the original GameCube ROM to run.\n\n"
+                         "Select a ROM file to copy it to the app folder, or quit.",
+                         romdir);
+                const SDL_MessageBoxButtonData buttons[] = {
+                    { SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, 1, "Select ROM..." },
+                    { SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 0, "Quit" },
+                };
+                const SDL_MessageBoxData box = {
+                    SDL_MESSAGEBOX_WARNING, g_pc_window,
+                    "Animal Crossing - No ROM found", msg,
+                    SDL_arraysize(buttons), buttons, NULL
+                };
+                int choice = 0;
+                SDL_ShowMessageBox(&box, &choice);
+                if (choice != 1) break;   /* Quit */
+
+                android_rom_pick();      /* SAF picker; Java copies + restarts */
+
+                /* The Java side restarts the process after a successful copy or
+                   exits it when nothing was selected — wait here until then. */
+                for (;;) SDL_Delay(2000);
+            }
+            pc_platform_shutdown();
+            return 1;
+        }
+#else
         const char* msg =
             "No game data found.\n\n"
             "Animal Crossing needs the original GameCube ROM to run.\n"
@@ -574,6 +635,7 @@ int main(int argc, char* argv[]) {
                                  "Animal Crossing - Missing ROM", msg, g_pc_window);
         pc_platform_shutdown();
         return 1;
+#endif
     }
 
     ac_entry();                         /* sets HotStartEntry = &entry */

@@ -51,7 +51,17 @@ static const PCPadBindings s_pad_defaults = {
 PCKeybindings g_pc_keybindings;
 PCPadBindings g_pc_padbindings;
 
+#ifdef __ANDROID__
+static char gKeybindingsFile[512];
+static void initKeybindingsFile(void) {
+    const char* ext = SDL_AndroidGetExternalStoragePath();
+    if (!ext) return;
+    snprintf(gKeybindingsFile, sizeof(gKeybindingsFile), "%s/keybindings.ini", ext);
+}
+static const char* KEYBINDINGS_FILE = gKeybindingsFile;
+#else
 static const char* KEYBINDINGS_FILE = "keybindings.ini";
+#endif
 
 /* mapping table: ini key name -> offset into PCKeybindings */
 typedef struct {
@@ -301,6 +311,9 @@ void pc_keybindings_save(void) {
 }
 
 void pc_keybindings_load(void) {
+#ifdef __ANDROID__
+    initKeybindingsFile();
+#endif
     pc_keybindings_reset_defaults();
 
     FILE* f = fopen(KEYBINDINGS_FILE, "r");

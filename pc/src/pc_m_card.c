@@ -61,14 +61,17 @@ static char g_gci_path_a[512];
 static char g_gci_tmp_path_a[512];
 static char g_gci_path_legacy[512];
 static char g_gci_tmp_path_legacy[512];
+static char g_crash_marker[512];
 #define PC_GCI_PATH       g_gci_path_a
 #define PC_GCI_TMP_PATH   g_gci_tmp_path_a
+#define PC_CRASH_MARKER   g_crash_marker
 /* Legacy paths for migration from flat save/ layout */
 #define PC_GCI_PATH_LEGACY     g_gci_path_legacy
 #define PC_GCI_TMP_PATH_LEGACY g_gci_tmp_path_legacy
 #else
 #define PC_GCI_PATH       PC_CARD_A_DIR "/" PC_GCI_FILENAME
 #define PC_GCI_TMP_PATH   PC_CARD_A_DIR "/" PC_GCI_FILENAME ".tmp"
+#define PC_CRASH_MARKER   PC_SAVE_DIR "/.last_session_crashed"
 /* Legacy paths for migration from flat save/ layout */
 #define PC_GCI_PATH_LEGACY     "save/" PC_GCI_FILENAME
 #define PC_GCI_TMP_PATH_LEGACY "save/" PC_GCI_FILENAME ".tmp"
@@ -254,6 +257,7 @@ static void pc_mcard_paths_init(void) {
     snprintf(g_gci_tmp_path_a, sizeof(g_gci_tmp_path_a), "%s/save/card_a/%s.tmp", ext, PC_GCI_FILENAME);
     snprintf(g_gci_path_legacy, sizeof(g_gci_path_legacy), "%s/save/%s", ext, PC_GCI_FILENAME);
     snprintf(g_gci_tmp_path_legacy, sizeof(g_gci_tmp_path_legacy), "%s/save/%s.tmp", ext, PC_GCI_FILENAME);
+    snprintf(g_crash_marker, sizeof(g_crash_marker), "%s/save/.last_session_crashed", ext);
 }
 #endif
 
@@ -756,6 +760,50 @@ static int pc_save_scan_gci_dir(void) {
     return FALSE;
 }
 
+/* --- Crash-session marker -------------------------------------------------
+ *
+ * A nonzero reset_code in the save becomes reset_flag on the next load, which is
+ * what puts Resetti on screen and switches off the inventory, the minigames and
+ * the rest. A crash can land between two save writes and leave the save stamped,
+ * so the player would come back to a neutered town over our bug. The next load
+ * finds this marker, deletes it, and raises pc_save_crashed_last_session for
+ * that one session. */
+int pc_save_crashed_last_session = 0;
+
+void pc_save_note_crashed_session(void) {
+    FILE* f;
+
+    /* No save loaded means boot, title screen or demo: no town to protect. */
+    if (!pc_save_loaded) {
+        return;
+    }
+#ifdef __ANDROID__
+    pc_mcard_paths_init();
+#endif
+    f = fopen(PC_CRASH_MARKER, "w");
+    if (f != NULL) {
+        fclose(f);
+        OSReport("[PC] crash inside the game: save reset penalty suppressed next launch\n");
+    }
+}
+
+static void pc_save_crash_marker_consume(void) {
+    struct stat st;
+
+#ifdef __ANDROID__
+    pc_mcard_paths_init();
+#endif
+    if (stat(PC_CRASH_MARKER, &st) != 0) {
+        return;
+    }
+    /* Delete it either way; a marker that outlived its crash would keep
+     * suppressing the penalty forever. */
+    if (remove(PC_CRASH_MARKER) == 0) {
+        pc_save_crashed_last_session = 1;
+        OSReport("[PC] Previous session ended in a crash: skipping the save reset penalty\n");
+    }
+}
+
 /* Reload save from GCI file on disk. PC equivalent of GC re-reading the
  * memory card. */
 int pc_save_reload(void) {
@@ -770,7 +818,7 @@ int pc_save_reload(void) {
     return pc_save_scan_gci_dir();
 }
 
-int pc_save_check_and_load(void) {
+static int pc_save_check_and_load_inner(void) {
     struct stat st;
     {
         char cwd[512];
@@ -824,6 +872,15 @@ int pc_save_check_and_load(void) {
 
     OSReport("[PC] No save file found\n");
     return FALSE;
+}
+
+/* Wrapper so the marker is consumed exactly once no matter which of the
+ * loader's five success returns fired. */
+int pc_save_check_and_load(void) {
+    int loaded = pc_save_check_and_load_inner();
+    /* Also on failure: a load rescued from a backup still means we are playing. */
+    pc_save_crash_marker_consume();
+    return loaded;
 }
 
 /* --- Card B scanning --- */

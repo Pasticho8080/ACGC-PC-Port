@@ -3283,6 +3283,13 @@ static int mCD_CheckResetCode(Private_c* priv) {
     }
 
     if (priv->reset_code != 0) {
+#ifdef TARGET_PC
+        /* A crash of ours can leave the save in this same state mid-save-cycle,
+         * and charging the player for it would put Resetti on their screen. */
+        if (pc_save_crashed_last_session) {
+            return TRUE;
+        }
+#endif
         res = FALSE;
     }
 

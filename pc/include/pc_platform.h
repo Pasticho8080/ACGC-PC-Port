@@ -152,6 +152,11 @@ extern int pc_gx_draw_call_count;
 
 /* --- Audio --- */
 extern int pc_save_loaded;
+
+/* Set when the previous session ended in a crash after a save was loaded, so
+ * mCD_CheckResetCode() can skip the "reset owed" penalty for one session. */
+extern int pc_save_crashed_last_session;
+void pc_save_note_crashed_session(void);
 int  pc_audio_get_buffer_fill(void);
 int  pc_audio_is_active(void);
 void pc_audio_set_paused(int paused);

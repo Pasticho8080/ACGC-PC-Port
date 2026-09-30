@@ -3,6 +3,7 @@
 #define _GNU_SOURCE  /* needed for dladdr */
 #endif
 #include "pc_platform.h"
+#include "pc_log.h"
 #include "pc_gx_internal.h"
 #include "pc_texture_pack.h"
 #include "pc_settings.h"
@@ -48,44 +49,62 @@ int           g_pc_widescreen_stretch = 0;
 uintptr_t pc_image_base = 0;
 uintptr_t pc_image_end  = 0;
 
-static jmp_buf* pc_active_jmpbuf = NULL;
+/* Last fault seen, kept for pc_crash_get_addr()/pc_crash_get_data_addr(). */
 static volatile uintptr_t pc_last_crash_addr = 0;
-
 static volatile uintptr_t pc_last_crash_data_addr = 0;
 
 #ifdef _WIN32
-/* longjmp from VEH is technically UB, but works on x86 MinGW (no SEH to corrupt).
- * GCC doesn't have __try/__except and checking every pointer in emu64 is impractical. */
+static const char* pc_veh_kind(DWORD code) {
+    switch (code) {
+        case EXCEPTION_ACCESS_VIOLATION: return "SIGSEGV (access violation)";
+        case EXCEPTION_ILLEGAL_INSTRUCTION: return "SIGILL (illegal instruction)";
+        case EXCEPTION_INT_DIVIDE_BY_ZERO: return "SIGFPE (divide by zero)";
+        case EXCEPTION_PRIV_INSTRUCTION: return "SIGILL (privileged instruction)";
+        default: return "SEH exception";
+    }
+}
+
+static int pc_veh_is_fault(DWORD code) {
+    return code == EXCEPTION_ACCESS_VIOLATION ||
+           code == EXCEPTION_ILLEGAL_INSTRUCTION ||
+           code == EXCEPTION_INT_DIVIDE_BY_ZERO ||
+           code == EXCEPTION_PRIV_INSTRUCTION;
+}
+
 static LONG WINAPI pc_veh_handler(PEXCEPTION_POINTERS ep) {
     DWORD code = ep->ExceptionRecord->ExceptionCode;
-    if (pc_active_jmpbuf != NULL &&
-        (code == EXCEPTION_ACCESS_VIOLATION ||
-         code == EXCEPTION_ILLEGAL_INSTRUCTION ||
-         code == EXCEPTION_INT_DIVIDE_BY_ZERO ||
-         code == EXCEPTION_PRIV_INSTRUCTION)) {
+    if (pc_veh_is_fault(code)) {
+        uintptr_t data = (code == EXCEPTION_ACCESS_VIOLATION)
+            ? (uintptr_t)ep->ExceptionRecord->ExceptionInformation[1] : 0;
         pc_last_crash_addr = (uintptr_t)ep->ExceptionRecord->ExceptionAddress;
-        if (code == EXCEPTION_ACCESS_VIOLATION)
-            pc_last_crash_data_addr = (uintptr_t)ep->ExceptionRecord->ExceptionInformation[1];
-        else
-            pc_last_crash_data_addr = 0;
-        jmp_buf* buf = pc_active_jmpbuf;
-        pc_active_jmpbuf = NULL;
-        longjmp(*buf, 1);
+        pc_last_crash_data_addr = data;
+        /* Record the fault, name the report, then let the OS handler take it:
+         * a fault the player hit while playing still has to leave evidence. */
+        pc_log_show_crash_dialog(
+            pc_log_fault(pc_veh_kind(code), pc_last_crash_addr, data), NULL, 0);
     }
     return EXCEPTION_CONTINUE_SEARCH;
 }
 #else
-/* POSIX equivalent of VEH — longjmp from signal handler (POSIX-defined for program faults) */
+/* POSIX equivalent of VEH. Runs on the faulting thread, so it must not return
+ * normally; it reports and then re-raises with the default action. */
+static const char* pc_signal_kind(int sig) {
+    switch (sig) {
+        case SIGSEGV: return "SIGSEGV";
+        case SIGILL: return "SIGILL";
+        case SIGFPE: return "SIGFPE";
+        default: return "signal";
+    }
+}
+
 static void pc_signal_handler(int sig, siginfo_t* info, void* ucontext) {
     (void)ucontext;
-    if (pc_active_jmpbuf != NULL) {
-        pc_last_crash_addr = (uintptr_t)info->si_addr;
-        pc_last_crash_data_addr = (sig == SIGSEGV) ?
-            (uintptr_t)info->si_addr : 0;
-        jmp_buf* buf = pc_active_jmpbuf;
-        pc_active_jmpbuf = NULL;
-        longjmp(*buf, 1);
-    }
+    pc_last_crash_addr = (uintptr_t)info->si_addr;
+    pc_last_crash_data_addr = (sig == SIGSEGV) ? (uintptr_t)info->si_addr : 0;
+    /* Record the fault, name the report, then re-raise with the default action
+     * so the process dies with the signal it actually hit. */
+    pc_log_show_crash_dialog(
+        pc_log_fault(pc_signal_kind(sig), pc_last_crash_addr, pc_last_crash_data_addr), NULL, 0);
     signal(sig, SIG_DFL);
     raise(sig);
 }
@@ -111,10 +130,6 @@ void pc_crash_protection_init(void) {
 #endif
         installed = 1;
     }
-}
-
-void pc_crash_set_jmpbuf(jmp_buf* buf) {
-    pc_active_jmpbuf = buf;
 }
 
 uintptr_t pc_crash_get_addr(void) {
@@ -581,6 +596,8 @@ int main(int argc, char* argv[]) {
 #endif
 
     SDL_SetMainReady();
+    pc_crash_protection_init();
+    pc_log_init();
     pc_settings_load();
     pc_keybindings_load();
     pc_platform_init();

@@ -113,9 +113,10 @@ void pc_platform_shutdown(void);
 void pc_platform_swap_buffers(void);
 int  pc_platform_poll_events(void);
 
-/* --- Crash protection (VEH + setjmp/longjmp) --- */
+/* --- Crash protection (VEH / POSIX signal handler) ---
+ * Records a crash report and then lets the fault through. No setjmp/longjmp
+ * recovery: a recovered fault leaves undefined game state behind. */
 void pc_crash_protection_init(void);
-void pc_crash_set_jmpbuf(jmp_buf* buf);  /* NULL to disable */
 uintptr_t pc_crash_get_addr(void);
 uintptr_t pc_crash_get_data_addr(void);
 

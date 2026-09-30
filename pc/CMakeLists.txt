@@ -12,6 +12,7 @@ set(CMAKE_CXX_STANDARD 17)
 # Options
 option(PC_CONSOLE "Show console window (disables -mwindows, useful for debugging)" OFF)
 option(PORT_GLES "Force OpenGL ES 3.0 instead of desktop OpenGL" OFF)
+option(AC_DEBUG_LOG "Verbose session log to logs/ and ring buffer in crash reports" OFF)
 
 # =============================================================================
 # Platform info
@@ -41,6 +42,9 @@ add_compile_definitions(
     PC_ENHANCEMENTS   # Optional visual improvements (MSAA, etc). Remove to get pure PC port.
     KEYBOARD_TYPING   # Physical keyboard typing in text editor. Remove for platforms without keyboards.
 )
+if(AC_DEBUG_LOG)
+    add_compile_definitions(AC_DEBUG_LOG)
+endif()
 if(APPLE)
     add_compile_definitions(GL_SILENCE_DEPRECATION)
 endif()
@@ -307,6 +311,7 @@ set(PC_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/pc_model_viewer.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/pc_texture_pack.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/pc_settings.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/pc_log.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/pc_profiler.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/pc_pause_menu.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/pc_settings_menu.c

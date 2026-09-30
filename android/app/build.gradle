@@ -37,6 +37,11 @@ android {
         debug {
             debuggable true
             jniDebuggable true
+            externalNativeBuild {
+                cmake {
+                    arguments "-DAC_DEBUG_LOG=ON"
+                }
+            }
         }
     }
     applicationVariants.all { variant ->

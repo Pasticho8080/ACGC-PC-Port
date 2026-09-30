@@ -1,6 +1,8 @@
 /* pc_os.c - Dolphin OS replacement: arena, timers, threads, message queues */
 #include "pc_platform.h"
+#include "pc_log.h"
 
+#include <stdio.h>
 #include <time.h>
 
 /* --- Memory arena --- */
@@ -332,26 +334,45 @@ void __OSCacheInit(void) {}
 u32 OSGetConsoleType(void) { return 0x10000004; /* OS_CONSOLE_DEVHW1 */ }
 
 void OSPanic(const char* file, int line, const char* msg, ...) {
+    /* Used to only print and return, which turned a bad free into an unbounded
+     * print loop on a frozen window. */
+    const char* log_path;
     va_list args;
-    fprintf(stderr, "OSPanic at %s:%d: ", file, line);
+
     va_start(args, msg);
-    vfprintf(stderr, msg, args);
+    log_path = pc_log_crash(file, line, msg, args);
     va_end(args);
-    fprintf(stderr, "\n");
+
+    pc_log_show_crash_dialog(log_path, file, line);
+
+    abort();
 }
 
 void OSReport(const char* fmt, ...) {
-    if (!g_pc_verbose) return;
     va_list args;
     va_start(args, fmt);
+#ifdef AC_DEBUG_LOG
+    /* Must be pc_vlogf, not pc_logf: the va_list has to be forwarded, not
+     * treated as the first variadic argument. */
+    pc_vlogf(fmt, args);
+#else
+    if (!g_pc_verbose) {
+        va_end(args);
+        return;
+    }
     vprintf(fmt, args);
+#endif
     va_end(args);
     fflush(stdout);
 }
 
 void OSVReport(const char* fmt, va_list list) {
+#ifdef AC_DEBUG_LOG
+    pc_vlogf(fmt, list);
+#else
     if (!g_pc_verbose) return;
     vprintf(fmt, list);
+#endif
 }
 
 void OSReportDisable(void) {}

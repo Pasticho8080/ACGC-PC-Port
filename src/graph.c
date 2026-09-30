@@ -27,7 +27,6 @@
 #include "zurumode.h"
 #ifdef TARGET_PC
 #include "pc_model_viewer.h"
-#include "pc_diag.h"
 #include "pc_platform.h"
 #include "pc_pause_menu.h"
 #include "pc_profiler.h"
@@ -189,7 +188,6 @@ static void graph_task_set00(GRAPH* this) {
             emu64_init();
             emu64_set_ucode_info(2, ucode);
             emu64_set_first_ucode(ucode[0].ucode_p);
-            PC_DIAG(3, "graph_task_set00: emu64_taskstart(Gfx_list05=%p)\n", (void*)this->Gfx_list05);
 #ifdef TARGET_PC
             {
                 Uint64 pc_prof_t = pc_profiler_begin_timer();
@@ -198,16 +196,6 @@ static void graph_task_set00(GRAPH* this) {
             }
 #else
             emu64_taskstart(this->Gfx_list05); /* work data */
-#endif
-#ifdef TARGET_PC
-            {
-                extern int pc_emu64_frame_cmds, pc_emu64_frame_tri_cmds, pc_emu64_frame_vtx_cmds;
-                extern int pc_emu64_frame_dl_cmds, pc_emu64_frame_crashes;
-                extern int pc_gx_draw_call_count;
-                PC_DIAG(5, "emu64 stats: cmds=%d tri=%d vtx=%d gl_draws=%d\n",
-                        pc_emu64_frame_cmds, pc_emu64_frame_tri_cmds, pc_emu64_frame_vtx_cmds,
-                        pc_gx_draw_call_count);
-            }
 #endif
             emu64_cleanup();
 #ifdef TARGET_PC
@@ -340,7 +328,6 @@ static void graph_main(GRAPH* this, GAME* game) {
     if (ResetStatus < IRQ_RESET_DELAY) {
         if (game->disable_display == FALSE) {
             int draw_err = graph_draw_finish(this);
-            PC_DIAG(5, "graph_main: draw_finish=%d ResetStatus=%d\n", draw_err, ResetStatus);
             if (draw_err == FALSE) {
                 GRAPH_SET_DOING_POINT(this, TASK_SET);
                 graph_task_set00(this);
@@ -367,13 +354,10 @@ static void graph_main(GRAPH* this, GAME* game) {
 #else
 static void graph_main(GRAPH* this, GAME* game) {
     game->disable_prenmi = FALSE;
-    PC_DIAG(10, "graph_main: enter, frame_counter=%d game=%p exec=%p cleanup=%p doing=%d\n",
-            this->frame_counter, (void*)game, (void*)game->exec, (void*)game->cleanup, game->doing);
     graph_setup_double_buffer(this);
     game_get_controller(game);
     game->disable_display = FALSE;
     GRAPH_SET_DOING_POINT(this, GAME_MAIN);
-    PC_DIAG(10, "graph_main: calling game_main (exec=%p)\n", (void*)game->exec);
 #ifdef TARGET_PC
     {
         Uint64 pc_prof_t;
@@ -385,7 +369,6 @@ static void graph_main(GRAPH* this, GAME* game) {
 #else
     game_main(game);
 #endif
-    PC_DIAG(10, "graph_main: game_main returned, frame_counter=%d\n", this->frame_counter);
 #ifdef TARGET_PC
     pc_pause_menu_draw(game);
 #endif
@@ -411,7 +394,6 @@ static void graph_main(GRAPH* this, GAME* game) {
                 graph_task_set00(this);
                 GRAPH_SET_DOING_POINT(this, TASK_SET_FINISHED);
                 this->frame_counter++;
-                PC_DIAG(10, "graph2: task_set done, frame_counter=%d\n", this->frame_counter);
 
                 if ((GETREG(SREG, 33) & 1) != 0) {
                     SETREG(SREG, 33, GETREG(SREG, 33) & ~1);
@@ -420,7 +402,6 @@ static void graph_main(GRAPH* this, GAME* game) {
         }
     }
 
-    PC_DIAG(10, "graph2: before audio+reset, frame_counter=%d\n", this->frame_counter);
     if (GETREG(SREG, 20) < 2) {
 #ifdef TARGET_PC
         Uint64 pc_prof_t = pc_profiler_begin_timer();
@@ -432,7 +413,6 @@ static void graph_main(GRAPH* this, GAME* game) {
     }
 
     reset_check(this, game);
-    PC_DIAG(10, "graph2: reset_check done\n");
 
     if (ResetStatus == IRQ_RESET_PRENMI && game->disable_prenmi == FALSE) {
         GAME_GOTO_NEXT(game, prenmi, PRENMI);
@@ -491,7 +471,6 @@ extern void graph_proc(void* arg) {
             graph->dt_total_60fps_frames += dt_num_60fps_frames;
             time = current_time;
 
-            PC_DIAG(10, "graph_proc: loop top, game=%p, dt=%f\n", (void*)game, delta_time);
             if (!dvderr_draw()) {
                 graph_main(__graph, game);
             }

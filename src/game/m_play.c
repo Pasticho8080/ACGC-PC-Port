@@ -40,7 +40,6 @@
 #include "m_skin_matrix.h"
 #include "padmgr.h"
 #ifdef TARGET_PC
-#include "pc_diag.h"
 #include "pc_platform.h"
 #endif
 
@@ -680,8 +679,6 @@ static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2) {
     Gfx* old_fb;
     Gfx* poly;
 
-    PC_DIAG(3, "makeBumpTexture: enter fb_mode=%d fb_wipe_mode=%d submenu.mode=%d\n",
-            play->fb_mode, play->fb_wipe_mode, play->submenu.mode);
     OPEN_DISP(graph1);
 
     if ((GETREG(HREG, 80) != 10) || (GETREG(HREG, 92) != 0)) {
@@ -764,9 +761,7 @@ static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2) {
     }
 
     if ((GETREG(HREG, 80) != 10) || (GETREG(HREG, 85) != 0)) {
-        PC_DIAG(3, "makeBumpTexture: before Actor_info_draw_actor\n");
         Actor_info_draw_actor(play, &play->actor_info);
-        PC_DIAG(3, "makeBumpTexture: Actor draw done, Camera2...\n");
         Camera2_draw(play);
         mMsg_Draw((GAME*)play);
     }
@@ -824,18 +819,13 @@ static void Game_play_draw(GAME_PLAY* play) {
 #endif
 
     DisplayList_initialize(graph, fill_r, fill_g, fill_b, &play->game);
-    PC_DIAG(3, "Game_play_draw: DL_init done\n");
 
     if ((GETREG(HREG, 80) != 10) || (GETREG(HREG, 82) != 0)) {
         setupFog(play, graph);
-        PC_DIAG(3, "Game_play_draw: fog done\n");
         setupViewer(play);
-        PC_DIAG(3, "Game_play_draw: viewer done\n");
         setupViewMatrix(play, graph, graph);
-        PC_DIAG(3, "Game_play_draw: viewMtx done\n");
 
         if ((makeBumpTexture(play, graph, graph) == 1) && ((GETREG(HREG, 80) != 10) || (GETREG(HREG, 89) != 0))) {
-            PC_DIAG(3, "Game_play_draw: bump done, drawing\n");
             watch_my_step_draw(play);
             banti_draw(play);
             mSM_submenu_draw(&play->submenu, (GAME*)play);
@@ -858,7 +848,6 @@ static void Game_play_draw(GAME_PLAY* play) {
 extern void play_main(GAME* game) {
     GAME_PLAY* play = (GAME_PLAY*)game;
 
-    PC_DIAG(5, "play_main: enter scene=%d frame=%d\n", play->scene_id, play->game_frame);
     game->doing_point = 0;
     game->doing_point_specific = 0x6E;
     fqrand();

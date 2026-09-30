@@ -24,15 +24,23 @@ ACTOR_PROFILE Structure_Profile = { mAc_PROFILE_STRUCTURE,
 
 static u8 aSTR_overlay[aSTR_ACTOR_TBL_COUNT][aSTR_OVERLAY_SIZE];
 #ifdef TARGET_PC
-/* Structure profiles such as TOUDAI_ACTOR are larger than STRUCTURE_ACTOR because of Delta time. 
- * If you are modding, be careful to not make the same mistake. */
-#define aSTR_PC_ACTOR_SLOT_SIZE 0x300
+/* Every structure profile (STRUCTURE_ACTOR, HOUSE_ACTOR, TOUDAI_ACTOR, ...) is
+ * allocated out of this pool, so a slot has to be at least as large as the
+ * biggest of them. The old hardcoded 0x300 was the GameCube's size and is too
+ * small here: on 64-bit every pointer inside ACTOR grows from 4 to 8 bytes.
+ * A slot smaller than class_size let Actor_init_actor_class()'s mem_clear spill
+ * into the next slot and zero its npc_id, which later read as a non-STRUCT
+ * type and freed a pointer into this static array. */
+#define aSTR_PC_ACTOR_SLOT_SIZE (sizeof(STRUCTURE_ACTOR))
 
 typedef union {
     u64 align;
     STRUCTURE_ACTOR actor;
     u8 bytes[aSTR_PC_ACTOR_SLOT_SIZE];
 } aSTR_pc_actor_storage_c;
+
+_Static_assert(sizeof(aSTR_pc_actor_storage_c) >= sizeof(STRUCTURE_ACTOR),
+               "structure actor slot is smaller than STRUCTURE_ACTOR; Actor_init_actor_class's mem_clear will spill into the next slot");
 
 static aSTR_pc_actor_storage_c aSTR_actor_cl[aSTR_ACTOR_TBL_COUNT];
 

@@ -183,13 +183,22 @@ static void aSTR_free_overlay_area_proc(ACTOR_DLFTBL* dlftbl) {
     }
 }
 
-static STRUCTURE_ACTOR* aSTR_get_actor_area_proc() {
+static STRUCTURE_ACTOR* aSTR_get_actor_area_proc(size_t class_size) {
     aSTR_Clip_c* clip = Common_Get(clip).structure_clip;
     STRUCTURE_ACTOR** str_tbl = clip->structure_actor_tbl;
     int* str_used_tbl = clip->structure_actor_used_tbl;
 
     STRUCTURE_ACTOR* res = NULL;
     int i;
+
+#ifdef TARGET_PC
+    /* A slot smaller than class_size would get scribbled over by
+     * Actor_init_actor_class()'s mem_clear, so oversized profiles get their own
+     * heap allocation. aSTR_free_actor_area_proc() spots those by absence. */
+    if (class_size > aSTR_PC_ACTOR_SLOT_SIZE) {
+        return (STRUCTURE_ACTOR*)zelda_malloc(class_size);
+    }
+#endif
 
     for (i = 0; i < aSTR_ACTOR_TBL_COUNT; i++) {
         if (*str_tbl != NULL && *str_used_tbl == FALSE) {
@@ -213,11 +222,16 @@ static void aSTR_free_actor_area_proc(STRUCTURE_ACTOR* str_actor) {
     for (i = 0; i < aSTR_ACTOR_TBL_COUNT; i++) {
         if (*str_tbl == str_actor) {
             *str_used_tbl = FALSE;
-            break;
+            return;
         }
         str_tbl++;
         str_used_tbl++;
     }
+
+#ifdef TARGET_PC
+    /* Not one of ours: it came from the zelda_malloc fallback in aSTR_get_actor_area_proc(). */
+    zelda_free(str_actor);
+#endif
 }
 
 static void aSTR_init_clip_area() {

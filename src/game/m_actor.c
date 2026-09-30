@@ -678,7 +678,7 @@ static int Actor_malloc_actor_class(ACTOR** actor_pp, ACTOR_PROFILE* profile, AC
                 break;
             }
 #endif
-            *actor_pp = (ACTOR*)((*Common_Get(clip).structure_clip->get_actor_area_proc)());
+            *actor_pp = (ACTOR*)((*Common_Get(clip).structure_clip->get_actor_area_proc)(profile->class_size));
             break;
         }
 
